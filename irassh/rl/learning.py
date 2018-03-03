@@ -7,27 +7,28 @@ import timeit
 import os
 import pickle
 
-global_sequence_length = 10 # numarul de comenzi ce formeaza o stare
+global_sequence_length = 10 # The number of commands that make of a state
 GAMMA = 0.9  # Forgetting.
 TUNING = False  # If False, just use arbitrary, pre-selected params.
 
-#ia comanda ca text si returneaza comanda ca numar si reconpensa asociata
+# Takes the command as text and returns the command as a number along with the reward
+# The dummy atribute specifies that dummy could will be executed, not the real code
 def get_command_reward(cmd2number,cmd2reward,dummy=True):
     if dummy:
-        # generare comanda random
+        # Generate a random command
         cmd_num = random.randint(1, 57)
-        #56 e commanda exit
+        # 56 is the "exit" command
         if cmd_num == 56:
             #resetez starea
             state = np.zeros(params["sequence_length"])
             state_index = 0
             state[0]=cmd_num
 
-        #aflu reconpensa pentru comanda
+        # Find out what the reward is for the given command
         reward = cmd2reward[cmd_num]
     else:
         cmd = get_command_as_str()
-        #verific daca e o comanda cunoscuta
+        # Check if the command is known
         if cmd in cmd2number:
             cmd_num = cmd2number[cmd]
             reward  = cmd2reward[cmd_num]
@@ -36,11 +37,12 @@ def get_command_reward(cmd2number,cmd2reward,dummy=True):
             reward  = cmd2reward["unknown"]
     return cmd_num, reward
 
+# The dummy atribute specifies that dummy could will be executed, not the real code
 def do_action(action,dummy=True):
     if not dummy:
         execute_response(action2text[action])
 
-#exemplu pentru params
+# params example
 sequence_length = 10
 nn_param = [128, 128]
 params = {
@@ -51,89 +53,102 @@ params = {
     "number_of_actions": 5
 }
 
-#functie dummy pentru antrenare
+# Dummy function for training
 def train_net_test(params):
     cmd2reward, cmd2number = get_cmd2reward()
     rl_agent = q_learner(params)
     state = np.zeros(params["sequence_length"])
     state_index = 0
 
-    #generare comanda random
+    # Generate a random command
     cmd = random.randint(0, 58)
 
-    #prima comanda din stare
+    # The state is a sequence of the last params["sequence_length"] commands given 
+    # Here the first command is inputed into the state
     state[state_index] = cmd
     state_index = state_index + 1
     for i in range(10000):
         action = rl_agent.choose_action(state)
         do_action(action)
+        # Generate the next command along with the reward
         cmd, reward = get_command_reward(cmd2number,cmd2reward)
 
         if state_index == params["sequence_length"]:
-            # scot cea mai veche comanda din stare si o adaug pe cea mai noua
+            # The oldest command is erased and the newest is introduced
             np.roll(state,1)
             state[params["sequence_length"]-1] = cmd
         else:
-            #adaug comanda la stare
+            # The next command is added to the state
             state[state_index] = cmd
             state_index = state_index + 1
         rl_agent.update_replay(reward, state)
+        
+        # 56 is the "exit" command
+        if cmd == 56:
+            # The state is reset
+            state = np.zeros(params["sequence_length"])
+            state_index = 0
+            
     rl_agent.log_results()
 
-#functie dummy pentru play
+# Dummy function for play
 def playing_test(params):
     cmd2reward, cmd2number = get_cmd2reward()
     rl_agent = q_learner(params)
     state = np.zeros(params["sequence_length"])
     state_index = 0
 
-    #generare comanda random
+    # Generate a random command
     cmd = random.randint(0, 58)
 
-    #prima comanda din stare
+    # The state is a sequence of the last params["sequence_length"] commands given 
+    # Here the first command is inputed into the state
     state[state_index] = cmd
     state_index = state_index + 1
     while True:
-        action = rl_agent.nn_choose_action(state)
-        # generare comanda random
+        # Genereate rl decision without logging for training
+        action = rl_agent.nn_choose_action(state
+        do_action(action)
+        # Generate a random command
         cmd = random.randint(1, 57)
-        #56 e commanda exit
-        if cmd == 56:
-            #resetez starea
-            state = np.zeros(params["sequence_length"])
-            state_index = 0
-            state[0]=cmd
+        # 56 is the "exit" command
 
-        #aflu reconpensa pentru comanda
+        # Look up reward for action
         reward = cmd2reward[cmd]
 
         if state_index == params["sequence_length"]:
-            # scot cea mai veche comanda din stare si o adaug pe cea mai noua
+            # The oldest command is erased and the newest is introduced
             np.roll(state,1)
             state[params["sequence_length"]-1] = cmd
         else:
-            #adaug comanda la stare
+            # The next command is added to the state
             state[state_index] = cmd
             state_index = state_index + 1
+            
+        # 56 is the "exit" command
+        if cmd == 56:
+            # The state is reset
+            state = np.zeros(params["sequence_length"])
+            state_index = 0
 
 class q_learner:
     def __init__(self, params, load_replay_file=None, save_replay_file_prefix="replay", save_model_file_prefix="saved-models/", save_every=250, end_value=-500):
-        #salvez valorile ca să le pot acesa in alte functii ale clasei
-
-        # aici se specifica numarul de comenzi ce defineste o stare
+        # This where the input values are saved so they can be used in other functions whithin the class
+                                            
+        # sequence_length specifies the number of commands that form a state
         self.sequence_length = params['sequence_length']
-        # aici se specifica numarul de actiuni posibile
+        # number_of_actions specifies the number of possible actions
         self.number_of_actions = params["number_of_actions"]
-        # construiesc reteaua
+        # The neural network is build here
         self.model = neural_net(self.sequence_length, self.number_of_actions, params["nn"])
-        #generez un nume pentru fisier la salvare
+        # The name that will be used when saving the neural network model
         self.filename = params_to_filename(params)
-        #numarul de intrari in replay necesar sa salveze
+        # Specifes the number of states to be inputed in replay before saving
         self.save_every = save_every
-        # denumire pentru fisierul de replay cand este salvat
+        # A prefix to the name of the replay file when saved
         self.save_replay_file_prefix = save_replay_file_prefix
         self.save_model_file_prefix = save_model_file_prefix
-        # valoarea la terminarea 'jocului'
+        # The value check for at the end of the "game"
         self.end_value = end_value
         
         self.observe = 1000  # Number of frames to observe before training.
@@ -253,7 +268,7 @@ class q_learner:
         # Log results after we're done all frames.
         log_results(self.filename, self.data_collect, self.loss_log)
 
-#in cmd2type.p am salvat un dictionar cu comenzile ca chei si tipurile ca valoare
+# In cmd2type.p a dictionary with the commands as keys and their types as values is saved in the pickle format
 def get_cmd2reward(filename="cmd2type.p"):
     cmd2type = pickle.load(open(filename, "rb"))
     cmd2number = dict()
@@ -309,8 +324,9 @@ def process_minibatch2(minibatch, model,sequence_length ,end_value):
 
     maxQs = np.max(new_qvals, axis=1)
     y = old_qvals
-    non_term_inds = np.where(rewards != end_value)[0]
-    term_inds = np.where(rewards == end_value)[0]
+    abs_end_value = abs(abs_end_value)
+    non_term_inds = np.where(abs(rewards) != abs_end_value)[0]
+    term_inds = np.where(abs(rewards) == abs_end_value)[0]
 
     y[non_term_inds, actions[non_term_inds].astype(int)] = rewards[non_term_inds] + (GAMMA * maxQs[non_term_inds])
     y[term_inds, actions[term_inds].astype(int)] = rewards[term_inds]
@@ -352,7 +368,7 @@ def process_minibatch(minibatch, model, number_of_actions, end_value):
 
     return X_train, y_train
 
-#genereaza un nume pentru fisierul ce trebuie salvat
+# Generates a name for saving
 def params_to_filename(params):
     return str(params['nn'][0]) + '-' + str(params['nn'][1]) + '-' + \
             str(params['batchSize']) + '-' + str(params['buffer'])
@@ -364,7 +380,7 @@ def params_to_filename(params):
 
 if __name__ == "__main__":
     if TUNING:
-        #aici se incearca parametri diferiti pentru reteaua neuronala
+        # Here we try different parameters
         param_list = []
         #aici se specifica numarul de comenzi ce defineste o stare
         sequence_lengths = [3,5,10,20]
