@@ -6,23 +6,58 @@ import os.path
 import timeit
 import os
 import pickle
+import plotting
 
-global_sequence_length = 10 # The number of commands that make of a state
-GAMMA = 0.9  # Forgetting.
+
 TUNING = False  # If False, just use arbitrary, pre-selected params.
+# params example, not used. Please check irassh/rl/rl_state.py
+sequence_length = 10
+nn_param = [128, 128]
+params = {
+    "batchSize": 64,
+    "buffer": 5000,
+    "nn": nn_param,
+    "sequence_length": 10, # The number of commands that make of a state
+    "number_of_actions": 5,
+    "cmd2number_reward": "cmd2number_reward.p",
+    "GAMMA" :  0.9  # Forgetting.
+}
+
+
+
+#get_command and do_action are not implemented
+def train_qlearner(load=None, save=None):
+    rl_agent = q_learner(params)
+    print_cmd2reward(rl_agent.cmd2number_reward)
+    if load is not None:
+        rl_agent.load_model(load)
+    while True:
+        cmd = get_command()
+        rl_agent.train(cmd)
+        action = rl_agent.choose_action(isTrained=False)
+        do_action(action)
+    if save is not None:
+        rl_agent.save_model(save)
+
+def get_command():
+    return ""
+
+def print_cmd2reward(cmd2number_reward):
+    for cmd in cmd2number_reward:
+        print(cmd,"has reward",cmd2number_reward[cmd][1],"and the number",cmd2number_reward[cmd][0])
 
 # Takes the command as text and returns the command as a number along with the reward
 # The dummy atribute specifies that dummy could will be executed, not the real code
-def get_command_reward(cmd2number,cmd2reward,dummy=True):
+def get_command_reward(cmd2number, cmd2reward, dummy=True):
     if dummy:
         # Generate a random command
         cmd_num = random.randint(1, 57)
         # 56 is the "exit" command
         if cmd_num == 56:
-            #resetez starea
+            # resetez starea
             state = np.zeros(params["sequence_length"])
             state_index = 0
-            state[0]=cmd_num
+            state[0] = cmd_num
 
         # Find out what the reward is for the given command
         reward = cmd2reward[cmd_num]
@@ -31,27 +66,20 @@ def get_command_reward(cmd2number,cmd2reward,dummy=True):
         # Check if the command is known
         if cmd in cmd2number:
             cmd_num = cmd2number[cmd]
-            reward  = cmd2reward[cmd_num]
+            reward = cmd2reward[cmd_num]
         else:
             cmd_num = cmd2number["unknown"]
-            reward  = cmd2reward["unknown"]
+            reward = cmd2reward["unknown"]
     return cmd_num, reward
 
+
 # The dummy atribute specifies that dummy could will be executed, not the real code
-def do_action(action,dummy=True):
+def do_action(action, dummy=True):
     if not dummy:
         execute_response(action2text[action])
 
-# params example
-sequence_length = 10
-nn_param = [128, 128]
-params = {
-    "batchSize": 64,
-    "buffer": 5000,
-    "nn": nn_param,
-    "sequence_length": global_sequence_length,
-    "number_of_actions": 5
-}
+
+
 
 # Dummy function for training
 def train_net_test(params):
@@ -63,7 +91,7 @@ def train_net_test(params):
     # Generate a random command
     cmd = random.randint(0, 58)
 
-    # The state is a sequence of the last params["sequence_length"] commands given 
+    # The state is a sequence of the last params["sequence_length"] commands given
     # Here the first command is inputed into the state
     state[state_index] = cmd
     state_index = state_index + 1
@@ -71,25 +99,26 @@ def train_net_test(params):
         action = rl_agent.choose_action(state)
         do_action(action)
         # Generate the next command along with the reward
-        cmd, reward = get_command_reward(cmd2number,cmd2reward)
+        cmd, reward = get_command_reward(cmd2number, cmd2reward)
 
         if state_index == params["sequence_length"]:
             # The oldest command is erased and the newest is introduced
-            np.roll(state,1)
-            state[params["sequence_length"]-1] = cmd
+            np.roll(state, 1)
+            state[params["sequence_length"] - 1] = cmd
         else:
             # The next command is added to the state
             state[state_index] = cmd
             state_index = state_index + 1
         rl_agent.update_replay(reward, state)
-        
+
         # 56 is the "exit" command
         if cmd == 56:
             # The state is reset
             state = np.zeros(params["sequence_length"])
             state_index = 0
-            
+
     rl_agent.log_results()
+
 
 # Dummy function for play
 def playing_test(params):
@@ -101,13 +130,13 @@ def playing_test(params):
     # Generate a random command
     cmd = random.randint(0, 58)
 
-    # The state is a sequence of the last params["sequence_length"] commands given 
+    # The state is a sequence of the last params["sequence_length"] commands given
     # Here the first command is inputed into the state
     state[state_index] = cmd
     state_index = state_index + 1
     while True:
         # Genereate rl decision without logging for training
-        action = rl_agent.nn_choose_action(state
+        action = rl_agent.nn_choose_action(state)
         do_action(action)
         # Generate a random command
         cmd = random.randint(1, 57)
@@ -118,23 +147,26 @@ def playing_test(params):
 
         if state_index == params["sequence_length"]:
             # The oldest command is erased and the newest is introduced
-            np.roll(state,1)
-            state[params["sequence_length"]-1] = cmd
+            np.roll(state, 1)
+            state[params["sequence_length"] - 1] = cmd
         else:
             # The next command is added to the state
             state[state_index] = cmd
             state_index = state_index + 1
-            
+
         # 56 is the "exit" command
         if cmd == 56:
-            # The state is reset
+        # The state is reset
             state = np.zeros(params["sequence_length"])
-            state_index = 0
+        state_index = 0
+
 
 class q_learner:
-    def __init__(self, params, load_replay_file=None, save_replay_file_prefix="replay", save_model_file_prefix="saved-models/", save_every=250, end_value=-500):
+    def __init__(self, params, load_replay_file=None, save_replay_file_prefix="replay",
+                 save_model_file_prefix="saved-models/", save_every=500, end_value=-500):
         # This where the input values are saved so they can be used in other functions whithin the class
-                                            
+
+        self.params = params
         # sequence_length specifies the number of commands that form a state
         self.sequence_length = params['sequence_length']
         # number_of_actions specifies the number of possible actions
@@ -150,24 +182,38 @@ class q_learner:
         self.save_model_file_prefix = save_model_file_prefix
         # The value check for at the end of the "game"
         self.end_value = end_value
-        
+        # Forgetting value
+        self.GAMMA  = params["GAMMA"]
+
         self.observe = 1000  # Number of frames to observe before training.
-        self.epsilon = 1     # Chance to choose random action
+        self.epsilon = 1  # Chance to choose random action
         self.train_frames = 10000  # Number of frames to play.
         self.batchSize = params['batchSize']
         self.buffer = params['buffer']
 
 
+        if isinstance(params["cmd2number_reward"], str):
+            #if string load from file
+            self.cmd2number_reward = pickle.load(open(params["cmd2number_reward"],"rb"))
+        else:
+            # if dictionary
+            self.cmd2number_reward = params["cmd2number_reward"]
+
+        self.state = np.zeros(params["sequence_length"])
+        self.state_index = 0
+
         # Just stuff used below.
         self.max_hacker_cmds = 0
         self.hacker_cmds = 0
-        self.t = 0
+
         self.data_collect = []
         if load_replay_file is None:
             self.replay = []  # stores tuples of (S, A, R, S').
         else:
             self.replay = pickle.load(open(load_replay_file, "rb"))
 
+
+        self.t = len(self.replay)
         self.loss_log = []
 
         # Let's time it.
@@ -175,12 +221,53 @@ class q_learner:
         self.state = np.zeros(10)
         self.lastAction = 0
 
-    def load_model(self, filename):
-        self.model =  neural_net(self.sequence_length, self.number_of_actions, params["nn"],filename)
+    def save_model(self,filename):
+        self.model.save_weights(filename,overwrite=True)
 
-    def choose_action(self, state):
-        if len(state.shape)==1:
-            state= np.expand_dims(state, axis=0)
+    def load_model(self, filename):
+        self.model = neural_net(self.sequence_length, self.number_of_actions, self.params["nn"], filename)
+
+    def train(self, cmd):
+        # Check if the command is known
+        if cmd in self.cmd2number_reward:
+            cmd_num, reward = self.cmd2number_reward[cmd]
+        else:
+            cmd_num, reward = self.cmd2number_reward["unknown"]
+
+        self.old_state = np.copy(self.state)
+        if self.state_index >= 1:
+            if self.state_index == self.sequence_length:
+                # The oldest command is erased and the newest is introduced
+                np.roll(self.state, 1)
+                self.state[self.sequence_length - 1] = cmd_num
+            else:
+                # The next command is added to the state
+                self.state[self.state_index] = cmd_num
+                self.state_index = self.state_index + 1
+
+            self.update_replay(reward, self.state)
+            # 56 is the "exit" command
+            if cmd_num == 56:
+                # The state is reset
+                self.state = np.zeros(self.sequence_length)
+                self.state_index = 0
+        else:
+            # The state is a sequence of the last params["sequence_length"] commands given
+            # Here the first command is inputed into the state
+            self.state[self.state_index] = cmd_num
+            self.state_index = self.state_index + 1
+
+
+
+    def choose_action(self, isTrained = False):
+        if isTrained:
+            return self.choose_action_after_training(self.state)
+        else:
+            return self.choose_action_and_train(self.state)
+
+    def choose_action_and_train(self, state):
+        if len(state.shape) == 1:
+            state = np.expand_dims(state, axis=0)
         self.t += 1
         self.hacker_cmds += 1
 
@@ -194,9 +281,9 @@ class q_learner:
         self.lastAction = action
         return action
 
-    def nn_choose_action(self, state):
-        if len(state.shape)==1:
-            state= np.expand_dims(state, axis=0)
+    def choose_action_after_training(self, state):
+        if len(state.shape) == 1:
+            state = np.expand_dims(state, axis=0)
         qval = self.model.predict(state, batch_size=1)
         action = (np.argmax(qval))
         return action
@@ -204,9 +291,9 @@ class q_learner:
     def update_replay(self, reward, new_state, action=None):
         if action is None:
             action = self.lastAction
-        
+
         # Experience replay storage.
-        self.replay.append((np.copy(self.state), action, reward, np.copy(new_state)))
+        self.replay.append((np.copy(self.old_state), action, reward, np.copy(new_state)))
 
         # If we're done observing, start training.
         if self.t > self.observe:
@@ -218,7 +305,7 @@ class q_learner:
             minibatch = random.sample(self.replay, self.batchSize)
 
             # Get training values.
-            X_train, y_train = process_minibatch2(minibatch, self.model, self.sequence_length, self.end_value)
+            X_train, y_train = process_minibatch2(minibatch, self.model, self.sequence_length, self.end_value, self.GAMMA)
 
             # Train the model on this batch.
             history = LossHistory()
@@ -228,16 +315,36 @@ class q_learner:
             )
             self.loss_log.append(history.losses)
 
+            if self.t % self.save_every == 0:
+                if len(self.data_collect) > 50:
+                    # Save the results to a file so we can graph it later.
+                    learn_f = 'results/command-frames/learn_data-' + self.filename + '.csv'
+                    with open(learn_f, 'w', newline='') as data_dump:
+                        wr = csv.writer(data_dump)
+                        wr.writerows(self.data_collect)
+                    plotting.plot_file(learn_f, 'learn')
+
+                if len(self.loss_log) > 500:
+                    loss_f = 'results/command-frames/loss_data-' + self.filename + '.csv'
+                    with open(loss_f, 'w', newline='') as lf:
+                        wr = csv.writer(lf)
+                        for loss_item in self.loss_log:
+                            wr.writerow(loss_item)
+
+                    plotting.plot_file(loss_f, 'loss')
+
+
         # Update the starting state with S'.
         self.state = new_state
 
         # Decrement epsilon over time.
         if self.epsilon > 0.1 and self.t > self.observe:
-            self.epsilon -= (1.0/self.train_frames)
+            self.epsilon -= (1.0 / self.train_frames)
 
         # We died, so update stuff.
         if reward == -500:
             # Log the car's distance at this T.
+            print([self.t, self.hacker_cmds])
             self.data_collect.append([self.t, self.hacker_cmds])
 
             # Update max.
@@ -250,7 +357,7 @@ class q_learner:
 
             # Output some stuff so we can watch.
             print("Max: %d at %d\tepsilon %f\t(%d)\t%f fps" %
-                  ( self.max_hacker_cmds, self.t, self.epsilon, self.hacker_cmds, fps))
+                  (self.max_hacker_cmds, self.t, self.epsilon, self.hacker_cmds, fps))
 
             # Reset.
             self.hacker_cmds = 0
@@ -258,32 +365,31 @@ class q_learner:
 
         # Save the model every 25,000 frames.
         if self.t % self.save_every == 0:
-            pickle._dump(self.replay, open(self.save_replay_file_prefix + "-" + str(self.t),"wb"))
+            pickle._dump(self.replay, open(self.save_replay_file_prefix + "-" + str(self.t), "wb"))
             model_save_filename = self.save_model_file_prefix + self.filename + '-' + str(self.t) + '.h5'
             self.model.save_weights(model_save_filename,
-                               overwrite=True)
+                                    overwrite=True)
             print("Saving model %s - %d" % (self.filename, self.t))
+
 
     def log_results(self):
         # Log results after we're done all frames.
         log_results(self.filename, self.data_collect, self.loss_log)
 
+
 # In cmd2type.p a dictionary with the commands as keys and their types as values is saved in the pickle format
 def get_cmd2reward(filename="cmd2type.p"):
     cmd2type = pickle.load(open(filename, "rb"))
-    cmd2number = dict()
-    cmd2reward = dict()
+    cmd2number_reward = dict()
     for cmd in cmd2type:
-        cmd2number[cmd] = (len(cmd2number) + 1)
         if cmd2type[cmd][1] == 'general':
-            cmd2reward[cmd2number[cmd]] = 0
+            cmd2number_reward[cmd] = (len(cmd2number_reward) + 1, 0)
         else:
-            cmd2reward[cmd2number[cmd]] = 500
-    cmd2number["exit"] = (len(cmd2number) + 1)
-    cmd2reward[cmd2number["exit"]] = -500
-    cmd2number["unknown"] = (len(cmd2number) + 1)
-    cmd2reward[cmd2number["unknown"]] = 0
-    return cmd2reward, cmd2number
+            cmd2number_reward[cmd] = (len(cmd2number_reward) + 1, 500)
+    cmd2number_reward["exit"] = (len(cmd2number_reward) + 1, -500)
+    cmd2number_reward["unknown"] =(len(cmd2number_reward) + 1, 0)
+    pickle.dump(cmd2number_reward,open("cmd2number_reward.p","wb"))
+    return cmd2number_reward
 
 
 def log_results(filename, data_collect, loss_log):
@@ -297,12 +403,23 @@ def log_results(filename, data_collect, loss_log):
         for loss_item in loss_log:
             wr.writerow(loss_item)
 
-def process_minibatch2(minibatch, model,sequence_length ,end_value):
-    # by Microos, improve this batch processing function 
+
+def IRL_helper(weights, path, trainFrames, i):
+    nn_param = [164, 150]
+    params = {
+        "batchSize": 100,
+        "buffer": 50000,
+        "nn": nn_param
+    }
+    model = neural_net(NUM_INPUT, nn_param)
+    train_net(model, params, weights, path, trainFrames, i)
+
+def process_minibatch2(minibatch, model, sequence_length, end_value, GAMMA=0.9):
+    # by Microos, improve this batch processing function
     #   and gain 50~60x faster speed (tested on GTX 1080)
     #   significantly increase the training FPS
-    
-    # instead of feeding data to the model one by one, 
+
+    # instead of feeding data to the model one by one,
     #   feed the whole batch is much more efficient
 
     mb_len = len(minibatch)
@@ -324,7 +441,7 @@ def process_minibatch2(minibatch, model,sequence_length ,end_value):
 
     maxQs = np.max(new_qvals, axis=1)
     y = old_qvals
-    abs_end_value = abs(abs_end_value)
+    abs_end_value = abs(end_value)
     non_term_inds = np.where(abs(rewards) != abs_end_value)[0]
     term_inds = np.where(abs(rewards) == abs_end_value)[0]
 
@@ -335,7 +452,8 @@ def process_minibatch2(minibatch, model,sequence_length ,end_value):
     y_train = y
     return X_train, y_train
 
-def process_minibatch(minibatch, model, number_of_actions, end_value):
+
+def process_minibatch(minibatch, model, number_of_actions, end_value, GAMMA=0.9):
     """This does the heavy lifting, aka, the training. It's super jacked."""
     global global_sequence_length
     X_train = []
@@ -360,67 +478,20 @@ def process_minibatch(minibatch, model, number_of_actions, end_value):
             update = reward_m
         # Update the value for the action we took.
         y[0][action_m] = update
-        X_train.append(old_state_m.reshape(sequence_length,))
-        y_train.append(y.reshape(number_of_actions,))
+        X_train.append(old_state_m.reshape(sequence_length, ))
+        y_train.append(y.reshape(number_of_actions, ))
 
     X_train = np.array(X_train)
     y_train = np.array(y_train)
 
     return X_train, y_train
 
+
 # Generates a name for saving
 def params_to_filename(params):
     return str(params['nn'][0]) + '-' + str(params['nn'][1]) + '-' + \
-            str(params['batchSize']) + '-' + str(params['buffer'])
-
-
-
-
+           str(params['batchSize']) + '-' + str(params['buffer'])
 
 
 if __name__ == "__main__":
-    if TUNING:
-        # Here we try different parameters
-        param_list = []
-        #aici se specifica numarul de comenzi ce defineste o stare
-        sequence_lengths = [3,5,10,20]
-        #reteau are doua straturi primul numar din fiecare sublista indica numarul de neuroni din primul strat
-        #iar al doilea numarul de neuroni din al doilea strat
-        nn_params = [[164, 150], [256, 256],
-                     [512, 512], [1000, 1000]]
-        #numarul de intrari care intra pentru o rulare de Backpropagation
-        batchSizes = [40, 100, 400]
-        #numarul maxim de comenzi impreuna cu actiunile luate si reconpensele acordate ce vor fi pastrate
-        buffers = [10000, 50000]
-
-        #se intorduc toate combinatiile de parametrii specificati mai sus intr-o lista
-        for nn_param in nn_params:
-            for batchSize in batchSizes:
-                for buffer in buffers:
-                    for sequence_length in sequence_lengths:
-                        params = {
-                            "batchSize": batchSize,
-                            "buffer": buffer,
-                            "nn": nn_param,
-                            "sequence_length": sequence_length,
-                            "number_of_actions":5
-                        }
-                        param_list.append(params)
-
-        #se antreneaza reteaua neuronala cu fiecare combinatie din lista
-        for param_set in param_list:
-            train_net_test(param_set)
-
-    else:
-
-        #aici se foloseste un singur set de parametri pentru antrenare
-        nn_param = [128, 128]
-        params = {
-            "batchSize": 64,
-            "buffer": 5000,
-            "nn": nn_param,
-            "sequence_length": global_sequence_length,
-            "number_of_actions": 5
-        }
-        train_net_test(params)
-
+    train_qlearner()
