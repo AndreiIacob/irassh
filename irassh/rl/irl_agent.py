@@ -2,8 +2,8 @@
 import numpy as np
 import logging
 from nn import neural_net  # construct the nn and send to playing
-#from cvxopt import matrix
-#from cvxopt import solvers  # convex optimization library
+from cvxopt import matrix
+from cvxopt import solvers  # convex optimization library
 import pickle
 from learning import q_learner
 
@@ -115,8 +115,8 @@ class irlAgent:
 
     def optimization(self):  # implement the convex optimization, posed as an SVM problem
         m = len(self.expertPolicy)
-        #P = matrix(2.0 * np.eye(m), tc='d')  # min ||w||
-        #q = matrix(np.zeros(m), tc='d')
+        P = matrix(2.0 * np.eye(m), tc='d')  # min ||w||
+        q = matrix(np.zeros(m), tc='d')
         policyList = [self.expertPolicy]
         h_list = [1]
         for i in self.policiesFE.keys():
@@ -124,12 +124,11 @@ class irlAgent:
             h_list.append(1)
         policyMat = np.matrix(policyList)
         policyMat[0] = -1 * policyMat[0]
-        #G = matrix(policyMat, tc='d')
-        #h = matrix(-np.array(h_list), tc='d')
-        #sol = solvers.qp(P, q, G, h)
+        G = matrix(policyMat, tc='d')
+        h = matrix(-np.array(h_list), tc='d')
+        sol = solvers.qp(P, q, G, h)
 
-        #weights = np.squeeze(np.asarray(sol['x']))
-        weights = np.zeros(10)
+        weights = np.squeeze(np.asarray(sol['x']))
         norm = np.linalg.norm(weights)
         weights = weights / norm
         return weights  # return the normalized weights
